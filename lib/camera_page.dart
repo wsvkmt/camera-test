@@ -1,52 +1,97 @@
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:camera/camera.dart';
 import 'dart:io';
-import 'camera_bloc.dart';
-
+import 'camera_cubit.dart';
 
 class CameraPage extends StatelessWidget {
-  const CameraPage({super.key});
+  const CameraPage({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (context) => CameraBloc()..add(const CameraEvent.initialize()),
+      create: (context) => CameraCubit()..initializeCamera(),
       child: Scaffold(
         appBar: AppBar(title: const Text('Camera')),
-        body: BlocConsumer<CameraBloc, CameraState>(
+        body: BlocConsumer<CameraCubit, CameraState>(
           listener: (context, state) {
-            if (state.errorMessage != null) {
+            if (state is CameraError) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(state.errorMessage!)),
+                SnackBar(content: Text(state.message)),
               );
             }
           },
           builder: (context, state) {
-            if (!state.isInitialized) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            return Column(
-              children: [
-                Expanded(
-                  child: CameraPreview(state.controller!),
-                ),
-                ElevatedButton(
-                  onPressed: state.isTakingPicture
-                      ? null
-                      : () => context.read<CameraBloc>().add(const CameraEvent.takePicture()),
-                  child: const Text('Take Picture'),
-                ),
-                if (state.imageFile != null)
-                  Expanded(
-                    child: Image.file(File(state.imageFile!.path)),
-                  ),
-              ],
-            );
+            return switch (state) {
+              CameraInitial() => const Center(child: CircularProgressIndicator()),
+              CameraReady(controller: var controller) => _buildCameraUI(context, controller),
+              CameraCapturing() => const Center(child: CircularProgressIndicator()),
+              CameraRecording(controller: var controller) => _buildCameraUI(context, controller, isRecording: true),
+              CameraCaptureComplete(image: var image) => _buildCaptureComplete(context, image),
+              CameraRecordingComplete(video: var video) => _buildRecordingComplete(context, video),
+              CameraError() => Center(child: Text('Error: ${(state).message}')),
+            };
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildCameraUI(BuildContext context, CameraController controller, {bool isRecording = false}) {
+    return Column(
+      children: [
+        Expanded(
+          child: CameraPreview(controller),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              ElevatedButton(
+                onPressed: () => context.read<CameraCubit>().takePicture(),
+                child: const Text('Take Picture'),
+              ),
+              ElevatedButton(
+                onPressed: isRecording
+                    ? () => context.read<CameraCubit>().stopVideoRecording()
+                    : () => context.read<CameraCubit>().startVideoRecording(),
+                child: Text(isRecording ? 'Stop Recording' : 'Start Recording'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCaptureComplete(BuildContext context, XFile image) {
+    return Column(
+      children: [
+        Expanded(
+          child: Image.file(File(image.path)),
+        ),
+        ElevatedButton(
+          onPressed: () => context.read<CameraCubit>().initializeCamera(),
+          child: const Text('Take Another Picture'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRecordingComplete(BuildContext context, XFile video) {
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: Text('Video saved: ${video.path}'),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: () => context.read<CameraCubit>().initializeCamera(),
+          child: const Text('Record Another Video'),
+        ),
+      ],
     );
   }
 }
